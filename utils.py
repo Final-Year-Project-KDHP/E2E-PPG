@@ -14,15 +14,13 @@ import neurokit2 as nk
 
 
 def get_data(
-        file_name: str,
-        local_directory: str = "data",
-        usecols: List[str] = ['ppg'],
+        file_path: str
 ) -> np.ndarray:
     """
     Import data (e.g., PPG signals)
     
     Args:
-        file_name (str): Name of the input file
+        file_path (str): path of the input file
         local_directory (str): Data directory
         usecols (List[str]): The columns to read from the input file
     
@@ -31,19 +29,16 @@ def get_data(
     """
     try:
         # Construct the file path
-        file_path = os.path.join(local_directory, file_name)
         # Load data from the specified CSV file
         input_data = pd.read_csv(
-            file_path,
-            delim_whitespace=True,
-            usecols=usecols)
+            file_path)
         # Extract signal
-        sig = input_data[usecols[0]].values
+        sig = np.array(input_data.iloc[:,1])
         return sig
     except FileNotFoundError:
-        print(f"File not found: {file_name}")
+        print(f"File not found: {file_path}")
     except pd.errors.EmptyDataError:
-        print(f"Empty data in file: {file_name}")
+        print(f"Empty data in file: {file_path}")
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
     # Return None in case of an error
