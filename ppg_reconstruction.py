@@ -13,6 +13,9 @@ import __main__
 from utils import find_peaks, resample_signal, get_data, bandpass_filter
 from ppg_sqa import sqa
 import more_itertools as mit
+from scipy.signal import welch
+import pandas as pd
+from tqdm import tqdm
 
 warnings.filterwarnings("ignore")
 
@@ -227,8 +230,7 @@ def reconstruction(
     setattr(__main__, "Generator", Generator)
 
     # Load GAN model parameters
-    generator = torch.load(os.path.join(
-        MODEL_PATH, GAN_MODEL_FILE_NAME), map_location=torch.device('cpu'))
+    generator = torch.load(os.path.join(MODEL_PATH, GAN_MODEL_FILE_NAME), map_location=torch.device('cpu'), weights_only=False)
     device = torch.device(
         "cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -442,35 +444,100 @@ def reconstruction(
     return ppg_signal, clean_indices, noisy_indices
 
 
+def standardized_label(label):
+    """Z-score standardization for label signal."""
+    label = label - np.mean(label)
+    label = label / np.std(label)
+    label[np.isnan(label)] = 0
+    return label
+
+def get_hr(y, sr=60, min=40, max=180):
+    p, q = welch(y, sr, nfft=1e5/sr, nperseg=np.min((len(y)-1, 256)))
+    return p[np.argmax(q)]*60
+
+def filter_reconstruncted_signal(reconstructed_signal, input_sampling_rate=60, window_time=5):
+    standard_reconstructed_signal = standardized_label(reconstructed_signal)
+    chunk_arr = np.array_split(standard_reconstructed_signal, len(standard_reconstructed_signal) / (input_sampling_rate * window_time))
+    if len(chunk_arr[-1]) < input_sampling_rate * window_time:
+        chunk_arr = chunk_arr[:-1]
+    hr_arr = np.array([get_hr(chunk) for chunk in chunk_arr])
+    print(hr_arr)
+    sorted_hr_array = np.sort(hr_arr)
+    range_counts = []
+    for idx in range(len(sorted_hr_array)):
+        count = 1
+        for jdx in range(idx+1, len(hr_arr)):
+            if sorted_hr_array[jdx] < sorted_hr_array[idx] + 30:
+                count += 1
+            else:
+                break
+        range_counts.append(count)
+    max_count_idx = np.argmax(range_counts)
+    noisy_ind = np.where(hr_arr < sorted_hr_array[max_count_idx])[0]
+    clean_ind = np.where(hr_arr >= sorted_hr_array[max_count_idx])[0]
+
+    for idx in range(len(sorted_hr_array)-1,-1,-1):
+        chunk = chunk_arr[idx]
+        if get_hr(chunk) > 190:
+            noisy_ind = np.append(noisy_ind, idx)
+            clean_ind = np.delete(clean_ind, np.where(clean_ind == idx))
+
+    return clean_ind, noisy_ind
+
 if __name__ == "__main__":
-    # Import a sample data
-    file_path = "/content/drive/MyDrive/Datasets/NBHR/PPG/20190831161936.csv"
-    input_sampling_rate = 20
-    input_sig = get_data(file_path=file_path)
+    ppg_dir = r"/content/drive/MyDrive/Datasets/NBHR/PPG"
+    save_dir = r"/content/drive/MyDrive/Datasets/NBHR/PPG_reconstructed"
+    txt_file = r"/content/drive/MyDrive/Datasets/NBHR/noisy_samples.txt"
+    ppg_dir_list = os.listdir(ppg_dir)
+    input_sampling_rate = 60
+    with open(txt_file, 'a') as file_txt:
+        for file in tqdm(ppg_dir_list):
+            if not file.endswith(".csv"):
+                continue
+            file_path = os.path.join(ppg_dir, file)
+            # Import a sample data
+            # file_path = r"/content/drive/MyDrive/Datasets/NBHR/PPG/20201004090731.csv"
+            input_data = pd.read_csv(
+                file_path)
+            # Extract signal
+            input_sig = np.array(input_data.iloc[:,1])
+            if np.isnan(input_sig).any():
+                nan_index = np.argmax(np.isnan(input_sig))
+                input_sig = input_sig[:nan_index]
 
-    # Run PPG signal quality assessment.
-    clean_ind, noisy_ind = sqa(sig=input_sig, sampling_rate=input_sampling_rate)
+            # input_sig = get_data(file_path=file_path)
 
-    # Run PPG reconstruction
-    reconstructed_signal, clean_ind, noisy_ind = reconstruction(
-        sig=input_sig,
-        clean_indices=clean_ind,
-        noisy_indices=noisy_ind,
-        sampling_rate=input_sampling_rate)
+            # Run PPG signal quality assessment.
+            clean_ind, noisy_ind = sqa(sig=input_sig, sampling_rate=input_sampling_rate)
 
-    np.save(r"/content/reconstructed_signal", reconstructed_signal)
+            # Run PPG reconstruction
+            reconstructed_signal, clean_ind, noisy_ind = reconstruction(
+                sig=input_sig,
+                clean_indices=clean_ind,
+                noisy_indices=noisy_ind,
+                sampling_rate=input_sampling_rate)
+            
+            reconstructed_signal = np.pad(
+                reconstructed_signal, 
+                (0, max(0, len(input_data) - len(reconstructed_signal))), 
+                mode='constant', 
+                constant_values=np.nan  # Pad with NaN if needed
+            )
 
-    # Display results
-    print("Analysis Results:")
-    print("------------------")
-    print(f"Number of clean parts in the signal after reconstruction: {len(clean_ind)}")
-    if clean_ind:
-        print("Length of each clean part in the signal (in seconds):")
-        for clean_seg in clean_ind:
-            print(f"   - {len(clean_seg)/input_sampling_rate:.2f}")
-                    
-    print(f"Number of noisy parts in the signal after reconstruction: {len(noisy_ind)}")
-    if noisy_ind:
-        print("Length of each noise in the signal (in seconds):")
-        for noise in noisy_ind:
-            print(f"   - {len(noise)/input_sampling_rate:.2f}")
+            # Replace the second column with reconstructed signal
+            input_data.iloc[:len(reconstructed_signal), 1] = reconstructed_signal
+            input_data.to_csv(os.path.join(save_dir, file), index=False)
+            # Display results
+            # print("Analysis Results:")
+            # print("------------------")
+            # print(f"Number of clean parts in the signal after reconstruction: {len(clean_ind)}")
+            # if clean_ind:
+            #     print("Length of each clean part in the signal (in seconds):")
+            #     for clean_seg in clean_ind:
+            #         print(f"   - {len(clean_seg)/input_sampling_rate:.2f}")
+                            
+            # print(f"Number of noisy parts in the signal after reconstruction: {len(noisy_ind)}")
+            if noisy_ind:
+                # print("Length of each noise in the signal (in seconds):")
+                file_txt.write(f"{file}   -   {noisy_ind}\n")
+                # print(f"{file}   -   {noisy_ind}")
