@@ -444,9 +444,9 @@ def reconstruction(
 
 if __name__ == "__main__":
     # Import a sample data
-    file_name = "201902020222_Data.csv"
+    file_path = "/content/drive/MyDrive/Datasets/NBHR/PPG/20190831161936.csv"
     input_sampling_rate = 20
-    input_sig = get_data(file_name=file_name)
+    input_sig = get_data(file_path=file_path)
 
     # Run PPG signal quality assessment.
     clean_ind, noisy_ind = sqa(sig=input_sig, sampling_rate=input_sampling_rate)
@@ -457,6 +457,8 @@ if __name__ == "__main__":
         clean_indices=clean_ind,
         noisy_indices=noisy_ind,
         sampling_rate=input_sampling_rate)
+
+    np.save(r"/content/reconstructed_signal", reconstructed_signal)
 
     # Display results
     print("Analysis Results:")
