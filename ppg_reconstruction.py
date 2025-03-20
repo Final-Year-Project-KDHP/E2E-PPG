@@ -485,59 +485,28 @@ def filter_reconstruncted_signal(reconstructed_signal, input_sampling_rate=60, w
     return clean_ind, noisy_ind
 
 if __name__ == "__main__":
-    ppg_dir = r"/content/drive/MyDrive/Datasets/NBHR/PPG"
-    save_dir = r"/content/drive/MyDrive/Datasets/NBHR/PPG_reconstructed"
-    txt_file = r"/content/drive/MyDrive/Datasets/NBHR/noisy_samples.txt"
-    ppg_dir_list = os.listdir(ppg_dir)
     input_sampling_rate = 60
-    with open(txt_file, 'a') as file_txt:
-        for file in tqdm(ppg_dir_list):
-            if not file.endswith(".csv"):
-                continue
-            file_path = os.path.join(ppg_dir, file)
-            # Import a sample data
-            # file_path = r"/content/drive/MyDrive/Datasets/NBHR/PPG/20201004090731.csv"
-            input_data = pd.read_csv(
-                file_path)
-            # Extract signal
-            input_sig = np.array(input_data.iloc[:,1])
-            if np.isnan(input_sig).any():
-                nan_index = np.argmax(np.isnan(input_sig))
-                input_sig = input_sig[:nan_index]
+    file_path = r"/content/drive/MyDrive/Colab Notebooks/PPG_mat/20190825192259.csv"
+    # Import a sample data
+    # file_path = r"/content/drive/MyDrive/Datasets/NBHR/PPG/20201004090731.csv"
+    input_data = pd.read_csv(
+        file_path)
+    # Extract signal
+    input_sig = np.array(input_data.iloc[:,1])
+    if np.isnan(input_sig).any():
+        nan_index = np.argmax(np.isnan(input_sig))
+        input_sig = input_sig[:nan_index]
 
-            # input_sig = get_data(file_path=file_path)
+    # input_sig = get_data(file_path=file_path)
 
-            # Run PPG signal quality assessment.
-            clean_ind, noisy_ind = sqa(sig=input_sig, sampling_rate=input_sampling_rate)
+    # Run PPG signal quality assessment.
+    clean_ind, noisy_ind = sqa(sig=input_sig, sampling_rate=input_sampling_rate)
 
-            # Run PPG reconstruction
-            reconstructed_signal, clean_ind, noisy_ind = reconstruction(
-                sig=input_sig,
-                clean_indices=clean_ind,
-                noisy_indices=noisy_ind,
-                sampling_rate=input_sampling_rate)
-            
-            reconstructed_signal = np.pad(
-                reconstructed_signal, 
-                (0, max(0, len(input_data) - len(reconstructed_signal))), 
-                mode='constant', 
-                constant_values=np.nan  # Pad with NaN if needed
-            )
-
-            # Replace the second column with reconstructed signal
-            input_data.iloc[:len(reconstructed_signal), 1] = reconstructed_signal
-            input_data.to_csv(os.path.join(save_dir, file), index=False)
-            # Display results
-            # print("Analysis Results:")
-            # print("------------------")
-            # print(f"Number of clean parts in the signal after reconstruction: {len(clean_ind)}")
-            # if clean_ind:
-            #     print("Length of each clean part in the signal (in seconds):")
-            #     for clean_seg in clean_ind:
-            #         print(f"   - {len(clean_seg)/input_sampling_rate:.2f}")
-                            
-            # print(f"Number of noisy parts in the signal after reconstruction: {len(noisy_ind)}")
-            if noisy_ind:
-                # print("Length of each noise in the signal (in seconds):")
-                file_txt.write(f"{file}   -   {noisy_ind}\n")
-                # print(f"{file}   -   {noisy_ind}")
+    # Run PPG reconstruction
+    reconstructed_signal, clean_ind, noisy_ind = reconstruction(
+        sig=input_sig,
+        clean_indices=clean_ind,
+        noisy_indices=noisy_ind,
+        sampling_rate=input_sampling_rate)
+    
+    np.save(r"/content/reconstructed_signal.npy", reconstructed_signal)
